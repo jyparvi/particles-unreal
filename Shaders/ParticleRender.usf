@@ -1,0 +1,96 @@
+#include "/Engine/Private/Common.ush"
+
+struct Particle
+{
+    float3 position;
+    float3 velocity;
+};
+
+StructuredBuffer<Particle> particles;
+StructuredBuffer<float4> d20Planes;
+
+float particleSize;
+float4 farParticleColor;
+float4 nearParticleColor;
+float velocityStretch;
+float3 glowColor;
+float glowIntensity;
+float glowSharpness;
+float4x4 d20WorldToLocal;
+uint d20PlaneCount;
+float4x4 worldToView;
+
+static const float ColorTransitionDistance = 40000.0f;
+static const float2 QuadVertices[6] =
+{
+    float2(-1.0f, -1.0f),
+    float2( 1.0f, -1.0f),
+    float2(-1.0f,  1.0f),
+    float2(-1.0f,  1.0f),
+    float2( 1.0f, -1.0f),
+    float2( 1.0f,  1.0f)
+};
+
+struct Varyings
+{
+    float4 position : SV_POSITION;
+    float2 uv : TEXCOORD0;
+    half4 color : COLOR0;
+};
+
+// Approximate the particle's distance to the D20 object's surface.
+float DistanceToD20Surface(float3 worldPosition)
+{
+    float3 localPosition = mul(float4(worldPosition, 1.0f), d20WorldToLocal).xyz;
+    float signedDistance = -1.0e+30f;
+    for (uint i = 0; i < d20PlaneCount; i++)
+    {
+        float4 plane = d20Planes[i];
+        signedDistance = max(signedDistance, dot(plane.xyz, localPosition) + plane.w);
+    }
+
+    return abs(signedDistance);
+}
+
+// Compute a camera-facing particle vertex with velocity-based stretching and distance-based color.
+Varyings MainVS(uint vertexID : SV_VertexID)
+{
+    Varyings OUT;
+
+    ResolvedView = ResolveView();
+    Particle particle = particles[vertexID / 6];
+
+    OUT.position = mul(float4(particle.position, 1.0f), DFHackToFloat(ResolvedView.WorldToClip));
+
+    float2 corner = QuadVertices[vertexID % 6];
+    float2 billboardOffset = corner * particleSize;
+    float2 viewVelocity = mul(float4(particle.velocity, 0.0f), worldToView).xy;
+    float viewSpeed = length(viewVelocity);
+
+    if (velocityStretch > 0.0f && viewSpeed > 0.01f)
+    {
+        float2 motionDirection = viewVelocity / viewSpeed;
+        float2 sideDirection = float2(motionDirection.y, -motionDirection.x);
+        float halfLength = particleSize + viewSpeed * velocityStretch * 0.5f;
+        billboardOffset = sideDirection * corner.x * particleSize + motionDirection * corner.y * halfLength;
+    }
+
+    OUT.position.xy += billboardOffset * float2(ResolvedView.ViewToClip[0][0], ResolvedView.ViewToClip[1][1]);
+    OUT.uv = corner * 0.5f + 0.5f;
+    float nearSurface = saturate(1.0f - DistanceToD20Surface(particle.position) / ColorTransitionDistance);
+    OUT.color = lerp(farParticleColor, nearParticleColor, nearSurface);
+
+    return OUT;
+}
+
+// Compute the particle's final color with glow and a soft circular edge.
+half4 MainPS(Varyings IN) : SV_Target
+{
+    float radius = length(IN.uv - 0.5f) * 2.0f;
+    float edge = 1.0f - smoothstep(0.84f, 1.0f, radius);
+    float core = pow(saturate(1.0f - radius), max(glowSharpness, 0.01f));
+    float glow = core * glowIntensity;
+    float3 color = lerp(IN.color.rgb, glowColor, saturate(glow)) * (1.0f + glow);
+
+    return half4(color * View.PreExposure, IN.color.a * edge);
+}

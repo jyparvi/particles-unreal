@@ -1,0 +1,196 @@
+#include "/Engine/Public/Platform.ush"
+#include "/Engine/Private/RandomPCG.ush"
+#include "/Engine/Private/MonteCarlo.ush"
+
+struct Particle
+{
+    float3 position;
+    float3 velocity;
+};
+
+RWStructuredBuffer<Particle> particles;
+StructuredBuffer<float4> d20Planes;
+
+float deltaTime;
+uint particleCount;
+uint initializeParticles;
+uint frameIndex;
+uint d20PlaneCount;
+float4x4 d20WorldToLocal;
+float4x4 prevD20WorldToLocal;
+float4x4 d20LocalToWorld;
+float minSpeed;
+float maxSpeed;
+
+static const float MaxSpawnDistance = 600.0f;
+static const float MinSpawnDistance = 165.0f;
+static const float CollisionSkin = 5.0f;
+static const float Bounciness = 0.8f;
+
+// Initialize a particle within the sphere or respawn it on the outer surface.
+void SpawnParticle(inout Particle p, uint particleID, bool initialize)
+{
+    float3 randomValues = Rand32ToFloat(Rand3DPCG32(int3(asint(particleID), asint(frameIndex), 0)));
+    float3 direction = UniformSampleSphere(randomValues.xy).xyz;
+    float speed = lerp(minSpeed, maxSpeed, randomValues.z);
+    
+    float distance = MaxSpawnDistance;
+    if (initialize)
+    {
+        randomValues = Rand32ToFloat(Rand3DPCG32(int3(asint(particleID), asint(frameIndex), 1)));
+        distance = lerp(MinSpawnDistance, MaxSpawnDistance, randomValues.y);
+        speed *= randomValues.z < 0.5f ? -Bounciness : 1.0f;
+    }
+
+    p.position = direction * distance;
+    p.velocity = -direction * speed;
+}
+
+// Find where a local-space movement segment starting outside the D20 object intersects its surface.
+bool IntersectSegmentWithD20(float3 origin, float3 direction, out float hitTime, out float3 localNormal)
+{
+    hitTime = 0.0f;
+    localNormal = 0.0f;
+    float exitTime = 1.0f;
+
+    for (uint i = 0; i < d20PlaneCount; i++)
+    {
+        float4 plane = d20Planes[i];
+        float distance = dot(plane.xyz, origin) + plane.w;
+        float speed = dot(plane.xyz, direction);
+
+        if (abs(speed) < 0.0001f)
+        {
+            if (distance > 0.0f)
+            {
+                return false;
+            }
+
+            continue;
+        }
+
+        float planeTime = -distance / speed;
+
+        if (speed < 0.0f)
+        {
+            if (planeTime > hitTime)
+            {
+                hitTime = planeTime;
+                localNormal = plane.xyz;
+            }
+        }
+        else if (planeTime < exitTime)
+        {
+            exitTime = planeTime;
+        }
+
+        if (hitTime > exitTime)
+        {
+            return false;
+        }
+    }
+
+    return hitTime > 0.0f;
+}
+
+// Check if a local point is inside the D20 object; if so, output the nearest face normal and signed distance.
+bool FindContainingFace(float3 samplePosition, out float3 localNormal, out float signedDistance)
+{
+    localNormal = 0.0f;
+    signedDistance = -1.0e+30f;
+
+    for (uint i = 0; i < d20PlaneCount; i++)
+    {
+        float4 plane = d20Planes[i];
+        float distance = dot(plane.xyz, samplePosition) + plane.w;
+
+        if (distance > 0.0f)
+        {
+            return false;
+        }
+
+        if (distance > signedDistance)
+        {
+            signedDistance = distance;
+            localNormal = plane.xyz;
+        }
+    }
+
+    return true;
+}
+
+// Transform a D20 object local-space normal to world space and normalize it.
+float3 LocalNormalToWorld(float3 localNormal)
+{
+    return normalize(mul(localNormal, transpose((float3x3)d20WorldToLocal)));
+}
+
+// Reflect inward velocity off the surface and apply bounciness.
+void BounceVelocity(inout float3 velocity, float3 worldNormal)
+{
+    if (dot(velocity, worldNormal) < 0.0f)
+    {
+        velocity = reflect(velocity, worldNormal) * Bounciness;
+    }
+}
+
+// Advance one particle, resolve D20 collisions, and respawn at the outer sphere.
+[numthreads(256, 1, 1)]
+void MainCS(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= particleCount)
+    {
+        return;
+    }
+
+    Particle p;
+    if (initializeParticles != 0)
+    {
+        SpawnParticle(p, id.x, true);
+    }
+    else
+    {
+        p = particles[id.x];
+    }
+
+    float3 prevPosition = p.position;
+    float3 nextPosition = prevPosition + p.velocity * deltaTime;
+
+    float3 localStart = mul(float4(prevPosition, 1.0f), prevD20WorldToLocal).xyz;
+    float3 localEnd = mul(float4(nextPosition, 1.0f), d20WorldToLocal).xyz;
+    float3 localDirection = localEnd - localStart;
+    float hitTime = 0.0f;
+    float3 localNormal = 0.0f;
+    float signedDistance;
+
+    if (IntersectSegmentWithD20(localStart, localDirection, hitTime, localNormal))
+    {
+        float3 worldNormal = LocalNormalToWorld(localNormal);
+        float3 collisionPoint = lerp(prevPosition, nextPosition, hitTime);
+
+        BounceVelocity(p.velocity, worldNormal);
+
+        nextPosition = collisionPoint + worldNormal * CollisionSkin + p.velocity * (deltaTime * (1.0f - hitTime));
+    }
+
+    float3 finalLocalPosition = mul(float4(nextPosition, 1.0f), d20WorldToLocal).xyz;
+
+    if (FindContainingFace(finalLocalPosition, localNormal, signedDistance))
+    {
+        float3 worldNormal = LocalNormalToWorld(localNormal);
+        float3 localSurface = finalLocalPosition - localNormal * signedDistance;
+
+        BounceVelocity(p.velocity, worldNormal);
+
+        nextPosition = mul(float4(localSurface, 1.0f), d20LocalToWorld).xyz + worldNormal * CollisionSkin;
+    }
+
+    p.position = nextPosition;
+
+    if (dot(p.position, p.position) >= MaxSpawnDistance * MaxSpawnDistance && dot(p.position, p.velocity) > 0.0f)
+    {
+        SpawnParticle(p, id.x, false);
+    }
+
+    particles[id.x] = p;
+}
