@@ -2,6 +2,10 @@
 
 A particle simulation in Unreal Engine using compute shaders. Particles bounce off a rotating D20 object and respawn on an outer sphere.
 
+![1.png](docs/images/1.png)
+
+![2.png](docs/images/2.png)
+
 ## Features
 
 - GPU particle simulation and collisions with the D20 object.
@@ -22,12 +26,13 @@ A particle simulation in Unreal Engine using compute shaders. Particles bounce o
 
 1. Clone this repository.
 2. Generate IDE project files from `Particles.uproject` if needed.
-3. Build the `ParticlesEditor` target for your platform using the **Development Editor** configuration.
+3. Build the `ParticlesEditor` target:
+   - **Xcode:** Select the **ParticlesEditor** scheme and **Development** configuration.
+   - **Visual Studio:** Select **Development Editor** for your platform.
 4. Open `Particles.uproject` with Unreal Engine **5.8** and wait for shaders and assets to finish loading.
-5. Open the `Particles` map (`Content/Particles.umap`) if it is not already open.
-6. Press **Play**.
+5. Click the **Play (▶)** button in the toolbar.
 
-The scene starts with **500 particles**. Select the **Particles** actor in the Outliner to adjust its **ParticleController** settings in the Details panel, before or during Play. The camera is fixed, and the D20 object rotates automatically.
+The scene starts with **500 particles**. Select the **Particles** actor in the Outliner to adjust its settings in the Details panel. During Play, select the same actor to adjust runtime settings. Runtime changes are temporary. The camera is fixed, and the D20 object rotates automatically.
 
 ## Settings
 
@@ -42,7 +47,7 @@ The scene starts with **500 particles**. Select the **Particles** actor in the O
 | Enable Glow / Glow Color / Glow Intensity / Glow Sharpness | Control the glow within each particle. |
 | Bloom Amount / Film Grain Amount | Control the post-processing effects. |
 
-Changing Particle Count recreates the particle buffer and restarts the particles. The upper limit is a code limit, not a performance guarantee; performance depends on the GPU and settings. Changes made during Play are temporary unless explicitly saved back to the editor actor.
+Changing Particle Count recreates the GPU particle buffer and restarts the particles. Changes made during Play are temporary unless explicitly saved back to the editor actor.
 
 ## Source files
 
@@ -52,5 +57,6 @@ Changing Particle Count recreates the particle buffer and restarts the particles
 | [ParticleCompute.usf](Shaders/ParticleCompute.usf) | Initializes particles, updates their positions, respawns them at the outer sphere, and resolves D20 collisions on the GPU. |
 | [ParticleRender.usf](Shaders/ParticleRender.usf) | Creates particle billboards and applies stretching, surface-distance colors, glow, and soft circular edges. |
 | [Particles.h](Source/Particles/Particles.h) / [Particles.cpp](Source/Particles/Particles.cpp) | Game mode, player controller, particle count and FPS display, and shader directory registration. |
+| [Particles.umap](Content/Particles.umap) | Demo map, camera, lighting, D20 and sphere meshes, post-processing, and particle settings. |
 
-Particle positions and velocities are stored in a GPU buffer. The D20 object's mesh faces are converted to local-space planes at startup for collision checks. Its actor reference is saved in the map, and the mesh must have **Allow CPU Access** enabled for packaged runs.
+Particle positions and velocities are stored in a GPU buffer. The D20 object's mesh faces are converted to local-space planes at startup for collision checks.
