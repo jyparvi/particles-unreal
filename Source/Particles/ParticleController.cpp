@@ -46,8 +46,8 @@ struct FParticleFrameParameters
     FMatrix44f d20LocalToWorld;
     float particleSize;
     float velocityStretch;
-    FLinearColor nearParticleColor;
-    FLinearColor farParticleColor;
+    FVector3f nearParticleColor;
+    FVector3f farParticleColor;
     FVector3f glowColor;
     float glowIntensity;
     float glowSharpness;
@@ -99,8 +99,8 @@ public:
         SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float4>, d20Planes)
         SHADER_PARAMETER(float, particleSize)
         SHADER_PARAMETER(float, velocityStretch)
-        SHADER_PARAMETER(FLinearColor, nearParticleColor)
-        SHADER_PARAMETER(FLinearColor, farParticleColor)
+        SHADER_PARAMETER(FVector3f, nearParticleColor)
+        SHADER_PARAMETER(FVector3f, farParticleColor)
         SHADER_PARAMETER(FMatrix44f, worldToView)
         SHADER_PARAMETER(uint32, d20PlaneCount)
         SHADER_PARAMETER(FMatrix44f, d20WorldToLocal)
@@ -319,8 +319,8 @@ void AParticleController::RunParticleSimulation(float DeltaTime)
 
     parameters.particleSize = FMath::Max(particleSize, 0.1f);
     parameters.velocityStretch = FMath::Clamp(velocityStretch, 0.0f, 0.5f);
-    parameters.nearParticleColor = nearParticleColor;
-    parameters.farParticleColor = farParticleColor;
+    parameters.nearParticleColor = FVector3f(nearParticleColor.R, nearParticleColor.G, nearParticleColor.B);
+    parameters.farParticleColor = FVector3f(farParticleColor.R, farParticleColor.G, farParticleColor.B);
     parameters.glowColor = FVector3f(glowColor.R, glowColor.G, glowColor.B);
     parameters.glowIntensity = enableGlow ? FMath::Clamp(glowIntensity, 0.0f, 10.0f) : 0.0f;
     parameters.glowSharpness = FMath::Clamp(glowSharpness, 0.25f, 8.0f);

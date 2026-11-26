@@ -31,11 +31,11 @@ public:
     UPROPERTY(EditAnywhere, Category = "Particles", meta = (DisplayName = "D20 Rotation Speed"))
     FVector d20RotationSpeed = FVector(10.0f, 15.0f, 10.0f);
 
-    UPROPERTY(EditAnywhere, Category = "Particles")
-    FLinearColor nearParticleColor = FLinearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    UPROPERTY(EditAnywhere, Category = "Particles", meta = (HideAlphaChannel))
+    FLinearColor nearParticleColor = FLinearColor::Red;
 
-    UPROPERTY(EditAnywhere, Category = "Particles")
-    FLinearColor farParticleColor = FLinearColor(1.0f, 1.0f, 0.0f, 1.0f);
+    UPROPERTY(EditAnywhere, Category = "Particles", meta = (HideAlphaChannel))
+    FLinearColor farParticleColor = FLinearColor::Yellow;
 
     UPROPERTY(EditAnywhere, Category = "Particles|Glow")
     bool enableGlow = true;
